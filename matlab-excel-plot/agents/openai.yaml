@@ -1,0 +1,4 @@
+interface:
+  display_name: "MATLAB Excel 绘图"
+  short_description: "只需指定 Excel，复用内置 MATLAB 代码识别 Case 与数据范围并绘图"
+  default_prompt: "使用 $matlab-excel-plot 读取我指定的 Excel，识别实验表头、Case 和横纵坐标，使用内置 MATLAB 模板绘图并保存 PNG、FIG 与重跑脚本。"
