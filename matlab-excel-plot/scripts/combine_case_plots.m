@@ -1,13 +1,14 @@
-function paths = combine_case_plots(outputs,outDir,stem)
+function paths = combine_case_plots(outputs,outDir,stem,cfg)
 % Combine case FIGs, preserving ordered legends. No overall title.
-n=size(outputs,1);
+if nargin<4, cfg=plot_style(); else, cfg=plot_style(cfg); end
+n=size(outputs,1); assert(n>0,'No cases to combine.');
 if n==4, rows=2; cols=2;
 elseif n==6, rows=3; cols=2;
 else, cols=min(2,n); rows=ceil(n/cols);
 end
 paths={fullfile(outDir,[stem '.png']),fullfile(outDir,[stem '.fig'])};
-assert(~isfile(paths{1}) && ~isfile(paths{2}),'Summary output already exists.');
-f=figure('Visible','off','Color','w','Units','centimeters','Position',[2 2 24 11*rows]);
+assert(~isfile(paths{1}) && ~isfile(paths{2}) && ~isfile(fullfile(outDir,[stem '.pdf'])),'Summary output already exists.');
+f=figure('Visible','off','Color','w','Units','centimeters','Position',[2 2 cfg.FigureWidthCm cfg.CombinedRowHeightCm*rows]);
 cleanup=onCleanup(@()close(f));
 t=tiledlayout(f,rows,cols,'TileSpacing','compact','Padding','compact');
 for k=1:n
@@ -29,22 +30,34 @@ for k=1:n
     allowExpand=getappdata(src,'LegendAllowExpandY');
     if isempty(allowExpand), allowExpand=true; end
     setappdata(dst,'LegendAllowExpandY',allowExpand);
-    set(dst,'XLim',src.XLim,'YLim',src.YLim,'XTick',src.XTick, ...
-        'YTick',src.YTick,'FontSize',7,'FontWeight','normal','LineWidth',0.8,'Box','on');
+    props={'FontName','FontSize','FontWeight','LineWidth','TickDir','TickLength', ...
+        'Box','XGrid','YGrid','TickLabelInterpreter','XScale','YScale', ...
+        'XDir','YDir','XTickLabelRotation','YTickLabelRotation', ...
+        'XLim','YLim','XTick','YTick','XTickLabel','YTickLabel'};
+    for m=1:numel(props), dst.(props{m})=src.(props{m}); end
     baseY=getappdata(src,'LegendBaseYLim');
     if ~isempty(baseY), ylim(dst,baseY); end
     setappdata(dst,'LegendBaseYLim',ylim(dst));
-    if strcmp(src.YTickMode,'auto'), dst.YTickMode='auto'; end
-    xlabel(dst,src.XLabel.String,'Interpreter','none','FontSize',7.7,'FontWeight','normal');
-    ylabel(dst,src.YLabel.String,'Interpreter','none','FontSize',7.7,'FontWeight','normal');
-    title(dst,src.Title.String,'Interpreter','none','FontSize',20,'FontWeight','bold');
+    tickMode=getappdata(src,'OriginalYTickMode');
+    if isempty(tickMode)||strcmp(tickMode,'auto'), dst.YTickMode='auto'; dst.YTickLabelMode='auto'; end
+    sourceTexts={src.XLabel,src.YLabel,src.Title}; targetTexts={dst.XLabel,dst.YLabel,dst.Title};
+    textProps={'String','FontName','FontUnits','FontSize','FontWeight','Interpreter'};
+    for m=1:3
+        for r=1:numel(textProps), targetTexts{m}.(textProps{r})=sourceTexts{m}.(textProps{r}); end
+    end
+    style=getappdata(src,'PlotStyle');
+    if isempty(style), style=cfg; end
+    setappdata(dst,'PlotStyle',style);
     if ~isempty(srcLegend)
         names=srcLegend.String;
         handles=gobjects(numel(names),1);
         for m=1:numel(names)
             handles(m)=findobj(dst,'Type','line','DisplayName',names{m});
         end
-        lg=legend(dst,handles,names,'FontSize',8,'FontWeight','normal','Interpreter','none','Location','northeast','NumColumns',1,'Orientation','vertical');
+        lg=legend(dst,handles,names,'FontName',srcLegend.FontName, ...
+            'FontSize',srcLegend.FontSize,'FontWeight',srcLegend.FontWeight, ...
+            'Interpreter',srcLegend.Interpreter,'Location','northeast','NumColumns',1,'Orientation','vertical');
+        setappdata(lg,'ConfiguredLegendFont',true);
     end
     clear srcCleanup
 end
@@ -57,7 +70,5 @@ for k=1:numel(allLegends)
 end
 assert(isequal(t.GridSize,[rows cols]));
 assert(isempty(t.Title.String),'Summary must not have an overall title.');
-exportgraphics(f,paths{1},'Resolution',900);
-exportgraphics(f,fullfile(outDir,[stem '.pdf']),'ContentType','vector','BackgroundColor','white');
-savefig(f,paths{2});
+export_plot_figure(f,fullfile(outDir,stem),cfg);
 end

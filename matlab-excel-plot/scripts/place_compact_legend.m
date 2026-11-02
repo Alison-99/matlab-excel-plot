@@ -7,8 +7,10 @@ if ~isempty(old)&&isgraphics(old), delete(old); end
 lg.Visible='on'; lg.FontWeight='normal'; lg.Location='northeast';
 lg.NumColumns=1; lg.Orientation='vertical'; lg.AutoUpdate='off';
 fonts=listfonts; candidates={'宋体','SimSun','Songti SC'};
-for k=1:numel(candidates)
-    if any(strcmpi(fonts,candidates{k})), lg.FontName=candidates{k}; break; end
+if ~isappdata(lg,'ConfiguredLegendFont')
+    for k=1:numel(candidates)
+        if any(strcmpi(fonts,candidates{k})), lg.FontName=candidates{k}; break; end
+    end
 end
 lg.ItemTokenSize=[30 18]; drawnow;
 base=getpixelposition(lg,true);
