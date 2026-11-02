@@ -17,7 +17,7 @@ description: 用内置 MATLAB 绘图代码读取本地 Excel 并绘图，只需�
 
 ## 生成配置，复用绘图代码
 
-- 读取 [references/configuration.md](references/configuration.md) 配置说明。在每次独立输出目录复制内置 `plot_excel.m` 、排序辅助函数 `legend_curve_order.m` 、图例避让函数 `place_compact_legend.m` 和 `arl1_line_width.m`，生成 `run_plots.m`，设置绝对 Excel 路径、jobs 和输出目录，再调用函数。保存两者便于脱离技能重跑，不修改技能模板来适配某次数据，也不覆盖已有结果。
+- 读取 [references/configuration.md](references/configuration.md)。每次识别 Excel 的确切范围后，调用 [scripts/create_plot_project.m](scripts/create_plot_project.m) 生成完整 R2023b 项目，保存主脚本、各 Case 独立脚本、合并脚本、显式源代码配置及所有辅助函数。默认把 Excel 原样复制到项目 data/，集中用相对路径管理；不能修改原工作簿。主脚本无需 Codex 工作区、临时文件或技能安装路径即可运行。每次重跑创建新的 results 子目录，保留已有输出。
 - 一个 job 对应一个实验块/Case；每条曲线指定确切的 Excel Y 范围及相应 X 范围。由 Excel 读取实际 X，不能仅按行数用 linspace 或旧步长构造。不同曲线采样数量不同时用各自 xRange；不能填造数据让长度一致。
 - 支持任意合理曲线数量。四条曲线沿用原线型，更多曲线继续分配不同的线型与标记；用户指定时通过 lineSpecs 配置。不要把实验种类误当线型，图例必须对应实际曲线。
 - ARL1 默认沿用用户既有的 `log10` 变换，标签写 `log10(ARL1)`；其他指标按含义选择原值或用户要求的变换，不给已经取对数的数据重复取对数。
@@ -36,7 +36,8 @@ description: 用内置 MATLAB 绘图代码读取本地 Excel 并绘图，只需�
 - 以本次用户提供r.m中的实际设置为准，替代此前多次试验的大字号、粗曲线样式。标记及其他属性保持参考样式；ARL1曲线线宽固定为0.8pt，图例样本仍保持基础线宽。
 - 图例FontSize=8、FontWeight=normal，不通过缩小字体实现紧凑。先使用原生legend的ItemTokenSize=[16 max(6,FontSize)]及NumColumns=1，再测量实际高度；原生最小行距仍过大时才回退到公开axes/line/text对象组成的CompactLegend覆盖层。优先宋体/SimSun，本机若无则用Songti SC；仍无时使用可用替代字体并说明。
 - Case20号及原有字重、4图2行2列/6图3行2列、无总标题、图例上下排序和避让逻辑继续保留。字体修改不改变数据含义，不复制r.m里固定[0,2.5]纵轴范围而裁掉其他数据。
-- 默认白底900dpi PNG、矢量PDF和可编辑FIG；默认画布宽24cm，单图高18cm，汇总图每行高11cm。按输出实际尺寸目视核对。
+- 默认白底900dpi PNG、矢量PDF和可编辑FIG；默认画布宽24cm，单图高18cm，汇总图每行高11cm。[scripts/plot_style.m](scripts/plot_style.m) 集中管理实际字体、字号、解释器、线宽、刻度样式和导出参数。合并图继承源轴/标签/图例的真实属性，不缩小字体或重置 FontName；保持0.8pt ARL1、6pt标记和现有紧凑间距。
+- [scripts/export_plot_figure.m](scripts/export_plot_figure.m) 在布局和图例避让完成后固定最终刻度/范围，使用同一 Figure、同一尺寸、白底、painters 渲染连续导出 PNG 与矢量 PDF，并检查导出未改变状态。不得另画 PDF 或默认将 PNG 嵌入 PDF。导出后将 PDF 栅格化到与 PNG 相同物理尺寸对照，检查字体替换、裁切和额外空白；仍有差异必须说明。
 
 ## 图题和 Case 排列
 
@@ -52,14 +53,15 @@ description: 用内置 MATLAB 绘图代码读取本地 Excel 并绘图，只需�
 
 ## 图例顺序
 
-- 每张图的图例从上到下与曲线整体从上到下对应；不按 Excel 列序、绘制顺序或只看最后一个点排序。复用 [scripts/legend_curve_order.m](scripts/legend_curve_order.m)，绘图函数已调用它。
-- 曲线交叉时，逐对比较共同的有效实测 X 点：哪条曲线位于上方的点更多，其图例就应在上方；下方点更多则在下方。数值相等或近乎重合的点不投票。以采样点数为“多”的默认口径，不按曲线面积、均值或偏移区间长度推断。
-- 多数关系能形成一致顺序时全部满足；出现 A 高于 B、B 高于 C、C 高于 A 的循环时，按净胜场、上下位置投票优势比例总和打破循环，并在运行日志说明。完全重合或无可比数据则保留稳定的原始顺序。不同 X 采样只比较共同实测点，不为排序插值；重复 X 须先核对其含义。
-- 只重排图例句柄与标签，不重新分配方法线型或改变曲线数据。同一方法跨 Case 保持线型一致，但图例顺序可随各 Case 的曲线位置变化。汇总图也应沿用各子图排好序的图例，不能重新按原始标签数组排列。
+- 默认批量统一：[scripts/prepare_plot_jobs.m](scripts/prepare_plot_jobs.m) 在绘图前读取所有 Case，复用 `legend_curve_order` 按共同实测 X 的多数上下位置生成各 Case 候选顺序，统计完整方法集合的候选顺序频率；采用出现最多的完整顺序，应用到所有单图与合并图。
+- 频率并列时，优先采用 `cfg.StandardLegendOrder` 中属于并列候选的既有标准；没有可用标准则取第一个有效完整 Plot 的顺序，并在日志说明。没有完整方法集合的 Case 时，在方法最多的候选中投票，未覆盖方法按首次出现追加，并报告该回退。
+- `cfg.LegendOrder` 人工配置优先，必须覆盖本批所有实际方法；缺方法的 Case 仅过滤标准顺序，不虚构数据。按方法名匹配真实句柄，不能只改图例文字。同一方法跨 Case 复用线型、颜色和 Marker 映射，不因少一条线就错位。
+- 旧的逐 Case 上下排序仍可通过 `cfg.LegendMode='per-case'` 启用；默认改为 `majority`。多数位置的循环打破、共同实测点比较、不插值及只重排图例句柄规则不变。固定的批量标准优先于每个 Case 的局部高低关系。
+- 生成项目时把整批确定的标准和方法样式映射写入 `plot_config.m`；单独运行某 Case 不能重新按单个 Case 改顺序。批量统计结果及并列/回退信息同时保存到报告文件。
 
 ## 运行与核对
 
 - 定位本机 MATLAB。本机已验证的命令为 `/Applications/MATLAB_R2023b.app/bin/matlab -maci64 -batch "run('绝对路径/run_plots.m')"`：当前安装是 Intel 版本，在本机默认选择 maca64 会失败。先核对安装目录及架构，不能在其他机器盲用此路径或架构。
 - 正确处理 shell 路径及 MATLAB 单引号转义。运行 `run_plots.m`，每图导出 900 dpi PNG 和可编辑 FIG；按需增加汇总图或 PDF。中文图题选择 `listfonts` 中可用的中文字体。
-- 检查 MATLAB 退出状态、导出文件非空、各曲线有效点数、图例和源范围；打开图片检查坐标、裁切、乱码和遮挡。汇总图复制 axes 时先保存源轴句柄，再创建目标 tile，核对曲线和图例确实存在。
+- 检查 MATLAB 退出状态、导出文件非空、各曲线有效点数、图例和源范围；打开单图、合并图及 PDF 栅格预览检查字体、坐标、裁切、乱码和遮挡。更新模板后用真实 Excel 测试，恢复默认 MATLAB 路径并在搬移的项目中直接重跑生成的 `.m`，验证不依赖原技能目录；比较重跑数据、样式和图片。汇总图复制 axes 时先保存源轴句柄，再创建目标 tile，核对曲线和图例确实存在。
 - 缺失环境、许可证或运行失败时保留已准备代码并准确说明；不能用 Python 图冒充 MATLAB 结果。交付实际图片、可编辑图及重跑脚本，链接使用绝对路径；多图可打包。简要交代数据分块、变换和基准行处理。
